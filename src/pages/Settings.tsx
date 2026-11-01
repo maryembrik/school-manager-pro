@@ -7,7 +7,8 @@ import { db } from '../db/db';
 import { logActivity } from '../db/repo';
 import { ALL_STAT_CARDS, ALL_WIDGETS, type AppSettings, type EvaluationAxis } from '../lib/settings';
 import { createBackup, downloadJson, restoreBackup, validateBackup, wipeAllData, type BackupPayload, type ValidationResult } from '../lib/backup';
-import { setPassword, verifyPassword } from '../lib/auth';
+import { createRecoveryCode, getAuth, setPassword, verifyPassword } from '../lib/auth';
+import { RecoveryCodeNotice } from '../components/RecoveryCode';
 import { formatDateTime, formatSize } from '../lib/utils';
 
 type TabId = 'school' | 'lists' | 'evaluation' | 'dashboard' | 'security' | 'backup';
@@ -423,6 +424,41 @@ function DashboardSettings() {
   );
 }
 
+function RecoveryCodeSettings() {
+  const { run } = useApp();
+  // Wrapped in an object so "still loading" (undefined) differs from "no recovery code".
+  const auth = useLiveQuery(async () => ({ recovery: (await getAuth())?.recovery }), []);
+  const [current, setCurrent] = useState('');
+  const [code, setCode] = useState('');
+  const create = () =>
+    run(async () => {
+      if (!(await verifyPassword(current))) throw new Error('كلمة المرور الحالية غير صحيحة.');
+      setCode(await createRecoveryCode());
+      setCurrent('');
+      await logActivity('نظام', 'الأمان', 'إنشاء رمز استرجاع جديد');
+    });
+  if (code) return <Card><RecoveryCodeNotice code={code} onDone={() => setCode('')} doneLabel="تم" /></Card>;
+  return (
+    <Card title="رمز الاسترجاع">
+      <div className="space-y-3 text-sm">
+        {!auth ? null : auth.recovery ? (
+          <p className="text-green-700 dark:text-green-400">يوجد رمز استرجاع أُنشئ في {formatDateTime(auth.recovery.createdAt)}. إنشاء رمز جديد يُلغي الرمز القديم.</p>
+        ) : (
+          <p className="rounded bg-orange-50 p-2 text-orange-900 dark:bg-orange-950 dark:text-orange-100">
+            لا يوجد رمز استرجاع. أنشئ واحدًا الآن: بدونه، نسيان كلمة المرور يعني إعادة تهيئة التطبيق واستعادة نسخة احتياطية.
+          </p>
+        )}
+        <Row label="كلمة المرور الحالية">
+          <input type="password" className={inputClass} value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" />
+        </Row>
+        <Button onClick={create} disabled={!current}>
+          <KeyRound className="h-4 w-4" /> {auth?.recovery ? 'إنشاء رمز جديد' : 'إنشاء رمز الاسترجاع'}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 function SecuritySettings() {
   const { run } = useApp();
   const [old, setOld] = useState('');
@@ -456,6 +492,7 @@ function SecuritySettings() {
           </Button>
         </div>
       </Card>
+      <RecoveryCodeSettings />
       <Card title="حدود الحماية">
         <div className="flex gap-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
           <ShieldAlert className="h-5 w-5 shrink-0 text-orange-500" />
@@ -463,7 +500,8 @@ function SecuritySettings() {
             <li>كلمة المرور مخزّنة بصيغة مُجزّأة PBKDF2-SHA256 مع ملح عشوائي (210000 تكرار)، ولا تُحفظ كنص واضح.</li>
             <li>شاشة الدخول تحمي الواجهة فقط. البيانات في IndexedDB غير مشفّرة، ويمكن لمن يملك صلاحية الوصول إلى هذا الحساب في الجهاز وأدوات المطوّر قراءتها.</li>
             <li>ملفات النسخ الاحتياطية JSON غير مشفّرة: احفظها في مكان آمن.</li>
-            <li>في حال نسيان كلمة المرور لا يمكن استرجاعها. يمكن مسح بيانات الموقع من المتصفح ثم استعادة نسخة احتياطية.</li>
+            <li>كلمة المرور نفسها لا يمكن استرجاعها. رمز الاسترجاع يسمح بتعيين كلمة مرور جديدة دون فقدان البيانات، وهو صالح لمرة واحدة ويُستبدل بعد كل استعمال.</li>
+            <li>دون رمز استرجاع، الحل الوحيد هو إعادة تهيئة التطبيق (تغيير اسم مجلد البيانات) ثم استعادة نسخة احتياطية.</li>
             <li>البيانات لا تُزامَن تلقائيًا بين الأجهزة؛ استعمل التصدير والاستيراد لنقلها.</li>
           </ul>
         </div>

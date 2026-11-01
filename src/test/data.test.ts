@@ -4,7 +4,7 @@ import { db, SchoolDB } from '../db/db';
 import { deleteRecord, saveRecord, saveWithAttachment, setGrade, setStudentAttendance } from '../db/repo';
 import type { DocumentRecord, Exam, SchoolClass, Student, Task } from '../db/types';
 import { createBackup, restoreBackup, validateBackup, wipeAllData } from '../lib/backup';
-import { setPassword, verifyPassword } from '../lib/auth';
+import { createRecoveryCode, hasRecoveryCode, resetPasswordWithRecoveryCode, setPassword, verifyPassword } from '../lib/auth';
 import { examStats, effectiveTaskStatus, repeatedAbsences, studentAverage } from '../lib/stats';
 import { validateFields } from '../components/EntityForm';
 import { loadSettings, sanitizeSettings, saveSettings } from '../lib/settings';
@@ -211,6 +211,32 @@ describe('Password protection', () => {
   it('refuses weak passwords', async () => {
     await expect(setPassword('123')).rejects.toThrow();
     await expect(setPassword('abcdefghij')).rejects.toThrow();
+  });
+
+  it('resets a forgotten password with the one-time recovery code, keeping the data', async () => {
+    await setPassword('director2026');
+    await db.students.add(student());
+    expect(await hasRecoveryCode()).toBe(false);
+    const code = await createRecoveryCode();
+    expect(code).toMatch(/^[A-Z2-9]{5}(-[A-Z2-9]{5}){3}$/);
+    expect(JSON.stringify(await db.meta.get('auth'))).not.toContain(code.replace(/-/g, ''));
+
+    // Changing the password normally keeps the code.
+    await setPassword('changed2027');
+    expect(await hasRecoveryCode()).toBe(true);
+
+    await expect(resetPasswordWithRecoveryCode('AAAAA-AAAAA-AAAAA-AAAAA', 'newpass2028')).rejects.toThrow();
+    // Lower case and missing dashes are accepted.
+    const next = await resetPasswordWithRecoveryCode(code.toLowerCase().replace(/-/g, ' '), 'newpass2028');
+    expect(await verifyPassword('newpass2028')).toBe(true);
+    expect(await verifyPassword('changed2027')).toBe(false);
+    expect(await db.students.count()).toBe(1);
+
+    // The used code no longer works; the new one does.
+    await expect(resetPasswordWithRecoveryCode(code, 'other2029x')).rejects.toThrow();
+    expect(next).not.toBe(code);
+    await resetPasswordWithRecoveryCode(next, 'other2029x');
+    expect(await verifyPassword('other2029x')).toBe(true);
   });
 });
 

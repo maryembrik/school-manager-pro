@@ -5,11 +5,16 @@ import { db } from '../db/db';
 // IMPORTANT: this gate protects the interface only. The stored data itself is NOT encrypted,
 // so anyone with access to this browser profile and developer tools can read it.
 
-export interface AuthRecord {
+interface HashedSecret {
   salt: string; // base64
   hash: string; // base64
   iterations: number;
+}
+
+export interface AuthRecord extends HashedSecret {
   createdAt: string;
+  /** One-time recovery code, hashed like the password. Replaced every time it is used. */
+  recovery?: HashedSecret & { createdAt: string };
 }
 
 const ITERATIONS = 210_000;
@@ -53,20 +58,60 @@ export function validatePasswordStrength(pw: string): string | null {
   return null;
 }
 
+async function hashSecret(secret: string): Promise<HashedSecret> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  return { salt: toB64(salt), hash: await hashPassword(secret, salt), iterations: ITERATIONS };
+}
+
+async function matches(secret: string, stored: HashedSecret) {
+  return timingSafeEqual(await hashPassword(secret, fromB64(stored.salt), stored.iterations), stored.hash);
+}
+
+/** Changing the password keeps the existing recovery code. */
 export async function setPassword(password: string) {
   const err = validatePasswordStrength(password);
   if (err) throw new Error(err);
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const hash = await hashPassword(password, salt);
-  const record: AuthRecord = { salt: toB64(salt), hash, iterations: ITERATIONS, createdAt: new Date().toISOString() };
+  const previous = await getAuth();
+  const record: AuthRecord = { ...(await hashSecret(password)), createdAt: new Date().toISOString(), recovery: previous?.recovery };
   await db.meta.put({ key: 'auth', value: record });
 }
 
 export async function verifyPassword(password: string): Promise<boolean> {
   const auth = await getAuth();
   if (!auth) return false;
-  const hash = await hashPassword(password, fromB64(auth.salt), auth.iterations);
-  return timingSafeEqual(hash, auth.hash);
+  return matches(password, auth);
+}
+
+// Recovery code: 20 characters from an alphabet without look-alikes (no 0/O, 1/I), about 100 bits.
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 32 symbols, so `byte & 31` is unbiased
+
+function normalizeCode(code: string) {
+  return code.toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+/** Create a new recovery code (invalidating the previous one) and return it for the director to write down. */
+export async function createRecoveryCode(): Promise<string> {
+  const auth = await getAuth();
+  if (!auth) throw new Error('أنشئ كلمة المرور أولًا.');
+  const raw = Array.from(crypto.getRandomValues(new Uint8Array(20)), (b) => CODE_ALPHABET[b & 31]).join('');
+  await db.meta.put({ key: 'auth', value: { ...auth, recovery: { ...(await hashSecret(raw)), createdAt: new Date().toISOString() } } });
+  return raw.match(/.{5}/g)!.join('-');
+}
+
+export async function hasRecoveryCode() {
+  return !!(await getAuth())?.recovery;
+}
+
+/**
+ * Set a new password using the recovery code. The code is single-use: a fresh one is created
+ * and returned. Data is untouched.
+ */
+export async function resetPasswordWithRecoveryCode(code: string, newPassword: string): Promise<string> {
+  const auth = await getAuth();
+  if (!auth?.recovery) throw new Error('لم يتم إنشاء رمز استرجاع على هذا الجهاز.');
+  if (!(await matches(normalizeCode(code), auth.recovery))) throw new Error('رمز الاسترجاع غير صحيح.');
+  await setPassword(newPassword);
+  return createRecoveryCode();
 }
 
 export function isUnlocked() {
