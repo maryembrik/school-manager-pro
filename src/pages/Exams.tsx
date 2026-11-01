@@ -2,15 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { FileSpreadsheet, NotebookPen, Printer } from 'lucide-react';
+import { FileSpreadsheet, NotebookPen, Paperclip, Printer } from 'lucide-react';
 import { CrudSection } from '../components/CrudPage';
-import { opts, type FieldDef } from '../components/EntityForm';
+import { opts, type FieldDef, type Values } from '../components/EntityForm';
+import { DocActions, FilePicker } from './Documents';
 import { Badge, Button, Card, EmptyState, Label, Loading, PageHeader, Select, Tabs, inputClass } from '../components/ui';
 import { DataTable } from '../components/DataTable';
 import { useApp } from '../context/AppContext';
 import { useRefs } from '../hooks/data';
 import { db } from '../db/db';
-import { setGrade } from '../db/repo';
+import { saveWithAttachment, setGrade } from '../db/repo';
 import type { Exam, Student } from '../db/types';
 import { exportExcel, htmlTable, printHtml, type ExportColumn } from '../lib/exporters';
 import { formatDate, fullName, round, todayISO } from '../lib/utils';
@@ -105,7 +106,17 @@ function ExamList() {
         correctionStatus: 'لم يبدأ',
         notes: '',
       })}
-      beforeSave={(v) => (v.subjectReceived && !v.subjectReceivedDate ? { ...v, subjectReceivedDate: todayISO() } : v)}
+      beforeSave={(v) => {
+        // Attaching the paper means the subject has been received.
+        const received = v.subjectReceived || !!v._file;
+        return { ...v, subjectReceived: received, subjectReceivedDate: received && !v.subjectReceivedDate ? todayISO() : v.subjectReceivedDate };
+      }}
+      saveFn={(r) => {
+        const { _file, ...rest } = r as unknown as Values;
+        const exam = rest as unknown as Exam;
+        return saveWithAttachment('exams', exam, _file as File | undefined, `${exam.title} (${exam.subject})`);
+      }}
+      formExtra={(values, set) => <FilePicker values={values} set={set} label="ورقة الامتحان / الموضوع (PDF، Word، صورة)" autoTitle={false} />}
       extraValidate={(v) => {
         const cls = v.classId ? refs.classMap.get(v.classId as number) : undefined;
         if (cls && cls.level !== v.level) return { classId: `هذا القسم تابع لمستوى "${cls.level}".` };
@@ -116,9 +127,12 @@ function ExamList() {
       filterFn={(e) => !level || e.level === level}
       filters={<Select value={level} onChange={setLevel} placeholder="كل المستويات" options={settings.levels.map((l) => ({ value: l, label: l }))} />}
       extraActions={(e) => (
-        <Button size="sm" variant="ghost" onClick={() => setParams({ tab: 'grades', exam: String(e.id) })}>
-          الأعداد
-        </Button>
+        <>
+          <DocActions doc={e} />
+          <Button size="sm" variant="ghost" onClick={() => setParams({ tab: 'grades', exam: String(e.id) })}>
+            الأعداد
+          </Button>
+        </>
       )}
       exportName="الامتحانات"
       exportColumns={[
@@ -129,6 +143,7 @@ function ExamList() {
         { header: 'التاريخ', value: (e) => e.date },
         { header: 'أجل الموضوع', value: (e) => e.subjectDueDate },
         { header: 'الموضوع مستلم', value: (e) => (e.subjectReceived ? 'نعم' : 'لا') },
+        { header: 'ملف الموضوع', value: (e) => e.fileName ?? '' },
         { header: 'الإصلاح', value: (e) => e.correctionStatus },
       ]}
       columns={[
@@ -140,7 +155,10 @@ function ExamList() {
           header: 'الموضوع',
           render: (e) =>
             e.subjectReceived ? (
-              <Badge tone="green">مستلم</Badge>
+              <Badge tone="green">
+                {e.fileId && <Paperclip className="ml-1 inline h-3 w-3" />}
+                مستلم
+              </Badge>
             ) : e.subjectDueDate && e.subjectDueDate < today ? (
               <Badge tone="red">متأخر ({formatDate(e.subjectDueDate)})</Badge>
             ) : (

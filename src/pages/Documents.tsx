@@ -7,7 +7,7 @@ import { Badge, IconButton, Label, PageHeader, Select } from '../components/ui';
 import { useApp } from '../context/AppContext';
 import { useRefs } from '../hooks/data';
 import { db } from '../db/db';
-import { saveRecord, storeFile } from '../db/repo';
+import { saveWithAttachment, type Attachable } from '../db/repo';
 import type { DocumentRecord } from '../db/types';
 import { downloadBlob } from '../lib/backup';
 import { formatDate, formatSize, todayISO } from '../lib/utils';
@@ -16,7 +16,7 @@ export const MAX_FILE_SIZE = 25 * 1024 * 1024;
 export const ACCEPTED = '.pdf,.doc,.docx,.odt,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.webp';
 const ACCEPTED_RE = /\.(pdf|docx?|odt|xlsx?|png|jpe?g|gif|webp)$/i;
 
-export async function openDocument(doc: DocumentRecord) {
+export async function openDocument(doc: Attachable) {
   if (!doc.fileId) throw new Error('لا يوجد ملف مرفق بهذه الوثيقة.');
   const f = await db.files.get(doc.fileId);
   if (!f) throw new Error('الملف المرفق غير موجود في التخزين المحلي.');
@@ -31,7 +31,7 @@ export async function openDocument(doc: DocumentRecord) {
   }
 }
 
-export async function downloadDocument(doc: DocumentRecord) {
+export async function downloadDocument(doc: Attachable) {
   if (!doc.fileId) throw new Error('لا يوجد ملف مرفق بهذه الوثيقة.');
   const f = await db.files.get(doc.fileId);
   if (!f) throw new Error('الملف المرفق غير موجود في التخزين المحلي.');
@@ -40,27 +40,9 @@ export async function downloadDocument(doc: DocumentRecord) {
 
 /** Persist a document with an optional new attachment (replacing the previous one). */
 export async function saveDocument(values: Values) {
-  const file = values._file as File | undefined;
   const { _file, ...rest } = values;
-  void _file;
   const record = rest as unknown as DocumentRecord;
-  if (file) {
-    const fileId = await storeFile(file);
-    const oldId = record.id ? (await db.documents.get(record.id))?.fileId : undefined;
-    record.fileId = fileId;
-    record.fileName = file.name;
-    record.fileType = file.type;
-    record.fileSize = file.size;
-    try {
-      await saveRecord('documents', record, record.title);
-    } catch (e) {
-      await db.files.delete(fileId); // don't leave an orphan blob
-      throw e;
-    }
-    if (oldId && oldId !== fileId) await db.files.delete(oldId);
-    return;
-  }
-  await saveRecord('documents', record, record.title);
+  await saveWithAttachment('documents', record, _file as File | undefined, record.title);
 }
 
 export function useDocumentFields(): FieldDef[] {
@@ -80,12 +62,22 @@ export function useDocumentFields(): FieldDef[] {
   ];
 }
 
-export function FilePicker({ values, set }: { values: Values; set: (n: string, v: unknown) => void }) {
+export function FilePicker({
+  values,
+  set,
+  label = 'الملف المرفق (PDF، Word، صور…)',
+  autoTitle = true,
+}: {
+  values: Values;
+  set: (n: string, v: unknown) => void;
+  label?: string;
+  autoTitle?: boolean;
+}) {
   const [error, setError] = useState('');
   const pending = values._file as File | undefined;
   return (
     <div className="md:col-span-2">
-      <Label>الملف المرفق (PDF، Word، صور…)</Label>
+      <Label>{label}</Label>
       <input
         type="file"
         accept={ACCEPTED}
@@ -97,7 +89,7 @@ export function FilePicker({ values, set }: { values: Values; set: (n: string, v
           if (!ACCEPTED_RE.test(f.name)) return setError('صيغة الملف غير مدعومة.');
           if (f.size > MAX_FILE_SIZE) return setError(`حجم الملف يتجاوز ${formatSize(MAX_FILE_SIZE)}.`);
           set('_file', f);
-          if (!values.title) set('title', f.name.replace(/\.[^.]+$/, ''));
+          if (autoTitle && !values.title) set('title', f.name.replace(/\.[^.]+$/, ''));
         }}
       />
       {pending ? (
@@ -114,7 +106,7 @@ export function documentDefaults(schoolYear: string, category = ''): Values {
   return { title: '', category, reference: '', date: todayISO(), schoolYear, sender: '', classId: undefined, teacherId: undefined, description: '', fileName: '', fileType: '', fileSize: 0, archived: false };
 }
 
-export function DocActions({ doc }: { doc: DocumentRecord }) {
+export function DocActions({ doc }: { doc: Attachable }) {
   const { run } = useApp();
   if (!doc.fileId) return null;
   return (

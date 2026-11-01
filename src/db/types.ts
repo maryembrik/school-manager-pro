@@ -147,6 +147,11 @@ export interface Exam extends BaseRecord {
   subjectReceivedDate: string;
   correctionStatus: 'لم يبدأ' | 'قيد الإصلاح' | 'مكتمل';
   notes: string;
+  /** The exam paper itself, stored in `files`. Optional: older exams have none. */
+  fileId?: number;
+  fileName?: string;
+  fileType?: string;
+  fileSize?: number;
 }
 
 export interface Grade extends BaseRecord {

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db, SchoolDB } from '../db/db';
-import { deleteRecord, saveRecord, setGrade, setStudentAttendance } from '../db/repo';
+import { deleteRecord, saveRecord, saveWithAttachment, setGrade, setStudentAttendance } from '../db/repo';
 import type { DocumentRecord, Exam, SchoolClass, Student, Task } from '../db/types';
 import { createBackup, restoreBackup, validateBackup, wipeAllData } from '../lib/backup';
 import { setPassword, verifyPassword } from '../lib/auth';
@@ -95,6 +95,28 @@ describe('CRUD: add, edit, delete', () => {
     const s = await db.students.get(sid);
     expect(s).toBeDefined();
     expect(s?.classId).toBeUndefined();
+  });
+});
+
+describe('Exam paper attachment', () => {
+  it('stores the paper, replaces it without leaving the old blob, and removes it with the exam', async () => {
+    const id = await saveWithAttachment('exams', exam(), new File(['v1'], 'sujet.pdf', { type: 'application/pdf' }), 'فرض');
+    const first = await db.exams.get(id);
+    expect(first?.fileName).toBe('sujet.pdf');
+    expect((await db.files.get(first!.fileId!))?.size).toBe(2);
+
+    await saveWithAttachment('exams', { ...first! }, new File(['v2!'], 'sujet-final.pdf', { type: 'application/pdf' }), 'فرض');
+    const second = await db.exams.get(id);
+    expect(second?.fileName).toBe('sujet-final.pdf');
+    expect(await db.files.get(first!.fileId!)).toBeUndefined();
+    expect(await db.files.count()).toBe(1);
+
+    // Editing other fields without a new file keeps the attachment.
+    await saveWithAttachment('exams', { ...second!, title: 'فرض معدّل' }, undefined, 'فرض');
+    expect((await db.exams.get(id))?.fileId).toBe(second!.fileId);
+
+    await deleteRecord('exams', id, 'فرض');
+    expect(await db.files.count()).toBe(0);
   });
 });
 

@@ -72,6 +72,7 @@ export async function deleteRecord(name: DataTableName, id: number, label: strin
       db.teacherAttendance,
       db.files,
       db.documents,
+      db.exams,
       db.classes,
       db.students,
       db.activity,
@@ -91,6 +92,8 @@ export async function deleteRecord(name: DataTableName, id: number, label: strin
       }
       if (name === 'exams') {
         await db.grades.where('examId').equals(id).delete();
+        const exam = await db.exams.get(id);
+        if (exam?.fileId) await db.files.delete(exam.fileId);
       }
       if (name === 'documents') {
         const doc = await db.documents.get(id);
@@ -153,6 +156,33 @@ export async function storeFile(file: File): Promise<number> {
     blob: file,
     createdAt: new Date().toISOString(),
   });
+}
+
+export interface Attachable extends BaseRecord {
+  fileId?: number;
+  fileName?: string;
+  fileType?: string;
+  fileSize?: number;
+}
+
+/**
+ * Save a record with an optional new attachment, replacing (and deleting) the previous one.
+ * The new blob is removed again if the record itself fails to save.
+ */
+export async function saveWithAttachment<T extends Attachable>(name: 'documents' | 'exams', record: T, file: File | undefined, label: string) {
+  if (!file) return saveRecord(name, record, label);
+  const fileId = await storeFile(file);
+  const oldId = record.id ? (await table<T>(name).get(record.id))?.fileId : undefined;
+  const withFile = { ...record, fileId, fileName: file.name, fileType: file.type, fileSize: file.size };
+  let id: number;
+  try {
+    id = await saveRecord(name, withFile, label);
+  } catch (e) {
+    await db.files.delete(fileId); // don't leave an orphan blob
+    throw e;
+  }
+  if (oldId && oldId !== fileId) await db.files.delete(oldId);
+  return id;
 }
 
 /** Upsert a grade (one per exam and student). */
