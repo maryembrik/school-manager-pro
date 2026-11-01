@@ -2,15 +2,56 @@
   "name": "school-manager-pro",
   "private": true,
   "version": "1.0.0",
+  "productName": "School Manager Pro",
+  "description": "لوحة القيادة الذكية لمدير المدرسة الابتدائية",
+  "author": "School Manager Pro",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "desktop": "npm run build && electron .",
+    "desktop:check": "node scripts/desktop-check.cjs",
+    "dist:win": "npm run build && electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "tn.school.manager.pro",
+    "productName": "School Manager Pro",
+    "copyright": "School Manager Pro",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "build/icon.png",
+      "package.json",
+      "!node_modules/**/*"
+    ],
+    "asar": true,
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png",
+      "artifactName": "School-Manager-Pro-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "School Manager Pro",
+      "uninstallDisplayName": "School Manager Pro",
+      "deleteAppDataOnUninstall": false,
+      "language": "1025"
+    }
   },
   "dependencies": {
+    "@fontsource/cairo": "^5.3.0",
     "dexie": "^4.0.10",
     "dexie-react-hooks": "^1.1.7",
     "lucide-react": "^0.460.0",
@@ -25,6 +66,8 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
+    "electron": "^45.2.1",
+    "electron-builder": "^26.18.0",
     "fake-indexeddb": "^6.0.0",
     "jsdom": "^25.0.1",
     "postcss": "^8.4.49",

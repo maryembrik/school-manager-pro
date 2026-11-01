@@ -54,6 +54,26 @@ export interface PrintHeader {
   logo?: string | null;
 }
 
+/** The app's bundled @font-face rules, with URLs made absolute so a blank print window can load them offline. */
+function bundledFontFaces(): string {
+  const out: string[] = [];
+  for (const sheet of Array.from(document.styleSheets)) {
+    let rules: CSSRuleList;
+    try {
+      rules = sheet.cssRules;
+    } catch {
+      continue;
+    }
+    const base = sheet.href ?? location.href;
+    for (const rule of Array.from(rules)) {
+      if (rule instanceof CSSFontFaceRule) {
+        out.push(rule.cssText.replace(/url\((['"]?)([^'")]+)\1\)/g, (_m, _q, u: string) => `url("${new URL(u, base).href}")`));
+      }
+    }
+  }
+  return out.join('\n');
+}
+
 /**
  * Open a print view (Arabic, RTL). PDF export goes through the browser's "Save as PDF"
  * destination, which renders Arabic shaping correctly — something client-side PDF
@@ -66,8 +86,8 @@ export function printHtml(title: string, bodyHtml: string, header: PrintHeader) 
   }
   const logo = header.logo?.startsWith('data:image/') ? `<img src="${escapeHtml(header.logo)}" style="height:60px" />` : '';
   w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
 <style>
+${bundledFontFaces()}
   body{font-family:Cairo,Tahoma,sans-serif;color:#111;margin:24px;font-size:13px}
   header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #1e3a8a;padding-bottom:8px;margin-bottom:16px}
   h1{font-size:20px;text-align:center;margin:12px 0;color:#1e3a8a}
@@ -78,16 +98,17 @@ export function printHtml(title: string, bodyHtml: string, header: PrintHeader) 
   .muted{color:#555}
   .sig{margin-top:48px;display:flex;justify-content:space-between}
   .box{border:1px solid #999;padding:8px;min-height:40px;white-space:pre-wrap}
-  @media print{button{display:none}}
+  @media print{.no-print{display:none}}
 </style></head><body>
 <header><div><strong>${escapeHtml(header.schoolName)}</strong><br><span class="muted">السنة الدراسية ${escapeHtml(header.schoolYear)}</span></div>${logo}</header>
 <h1>${escapeHtml(title)}</h1>
 ${bodyHtml}
 <p class="muted" style="margin-top:24px;font-size:11px">طُبع بتاريخ ${new Date().toLocaleDateString('ar-TN')}</p>
-<button onclick="window.print()" style="position:fixed;top:8px;left:8px;padding:6px 14px">طباعة / حفظ PDF</button>
+<p class="no-print muted" style="position:fixed;top:4px;left:8px;font-size:11px">للطباعة أو الحفظ بصيغة PDF: Ctrl+P</p>
 </body></html>`);
   w.document.close();
-  setTimeout(() => w.print(), 600);
+  // Print once the bundled fonts are ready (with a fallback timeout).
+  Promise.race([w.document.fonts.ready, new Promise((r) => setTimeout(r, 1500))]).then(() => setTimeout(() => w.print(), 100));
 }
 
 export { escapeHtml };
