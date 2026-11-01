@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --p-50: 238 241 248;
+  --p-100: 215 222 239;
+  --p-500: 98 117 173;
+  --p-600: 64 86 151;
+  --p-700: 30 58 138;
+  --p-800: 26 49 117;
+  --p-900: 21 41 97;
+}
+
+html,
+body {
+  font-family: Cairo, Tajawal, system-ui, sans-serif;
+}
+
+body {
+  @apply bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-100;
+}
+
+.recharts-wrapper,
+.recharts-surface {
+  direction: ltr;
+}
+.recharts-legend-item-text,
+.recharts-tooltip-wrapper {
+  direction: rtl;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+}
