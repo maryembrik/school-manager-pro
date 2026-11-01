@@ -9,7 +9,7 @@ import {
   validatePasswordStrength,
   verifyPassword,
 } from '../lib/auth';
-import { Button, Label, Loading, inputClass } from '../components/ui';
+import { Button, Label, Loading, SecretInput } from '../components/ui';
 import { RecoveryCodeNotice } from '../components/RecoveryCode';
 import { useApp } from '../context/AppContext';
 
@@ -126,15 +126,14 @@ export function Login({ onUnlock }: { onUnlock: () => void }) {
                 {mode === 'recover' && (
                   <label className="mb-3 block">
                     <Label>رمز الاسترجاع</Label>
-                    <input dir="ltr" autoFocus className={`${inputClass} font-mono uppercase`} placeholder="XXXXX-XXXXX-XXXXX-XXXXX" value={code} onChange={(e) => setCode(e.target.value)} autoComplete="off" />
+                    <SecretInput dir="ltr" autoFocus className="font-mono uppercase" placeholder="XXXXX-XXXXX-XXXXX-XXXXX" value={code} onChange={(e) => setCode(e.target.value)} autoComplete="off" />
                   </label>
                 )}
                 <label className="mb-3 block">
                   <Label>{mode === 'recover' ? 'كلمة المرور الجديدة' : 'كلمة المرور'}</Label>
-                  <input
-                    type="password"
+                  <SecretInput
+                    key={mode} // start hidden again when switching between login and recovery
                     autoFocus={mode !== 'recover'}
-                    className={inputClass}
                     value={pw}
                     onChange={(e) => setPw(e.target.value)}
                     autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
@@ -143,7 +142,7 @@ export function Login({ onUnlock }: { onUnlock: () => void }) {
                 {mode !== 'login' && (
                   <label className="mb-3 block">
                     <Label>تأكيد كلمة المرور</Label>
-                    <input type="password" className={inputClass} value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" />
+                    <SecretInput value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" />
                   </label>
                 )}
                 {error && <p className="mb-3 whitespace-pre-line rounded bg-red-50 p-2 text-sm text-red-700">{error}</p>}

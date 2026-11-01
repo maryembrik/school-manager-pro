@@ -1,5 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
-import { AlertTriangle, Inbox, Loader2, X } from 'lucide-react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import { AlertTriangle, Eye, EyeOff, Inbox, Loader2, X } from 'lucide-react';
 
 // ---------- Button ----------
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'success';
@@ -231,6 +231,26 @@ export const useConfirm = () => useContext(ConfirmCtx);
 // ---------- Form controls ----------
 export const inputClass =
   'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:border-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-slate-700';
+
+/** Masked input with an eye button to show or hide what was typed. `dir` applies to the whole field. */
+export function SecretInput({ className = '', dir, ...props }: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative" dir={dir}>
+      <input {...props} type={visible ? 'text' : 'password'} className={`${inputClass} pe-10 ${className}`} />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        className="absolute inset-y-0 end-0 flex w-10 items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+        title={visible ? 'إخفاء' : 'إظهار'}
+        aria-label={visible ? 'إخفاء' : 'إظهار'}
+        aria-pressed={visible}
+      >
+        {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </button>
+    </div>
+  );
+}
 
 export function Label({ children, required }: { children: ReactNode; required?: boolean }) {
   return (

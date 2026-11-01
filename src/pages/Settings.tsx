@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowDown, ArrowUp, Database, Download, Image, KeyRound, Plus, Settings as SettingsIcon, ShieldAlert, Trash2, Upload } from 'lucide-react';
-import { Button, Card, IconButton, Label, PageHeader, Tabs, inputClass, useConfirm } from '../components/ui';
+import { Button, Card, IconButton, Label, PageHeader, SecretInput, Tabs, inputClass, useConfirm } from '../components/ui';
 import { useApp } from '../context/AppContext';
 import { db } from '../db/db';
 import { logActivity } from '../db/repo';
@@ -449,7 +449,7 @@ function RecoveryCodeSettings() {
           </p>
         )}
         <Row label="كلمة المرور الحالية">
-          <input type="password" className={inputClass} value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" />
+          <SecretInput value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" />
         </Row>
         <Button onClick={create} disabled={!current}>
           <KeyRound className="h-4 w-4" /> {auth?.recovery ? 'إنشاء رمز جديد' : 'إنشاء رمز الاسترجاع'}
@@ -479,13 +479,13 @@ function SecuritySettings() {
       <Card title="تغيير كلمة المرور">
         <div className="space-y-3">
           <Row label="كلمة المرور الحالية">
-            <input type="password" className={inputClass} value={old} onChange={(e) => setOld(e.target.value)} autoComplete="current-password" />
+            <SecretInput value={old} onChange={(e) => setOld(e.target.value)} autoComplete="current-password" />
           </Row>
           <Row label="كلمة المرور الجديدة (8 أحرف على الأقل، أرقام وحروف)">
-            <input type="password" className={inputClass} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" />
+            <SecretInput value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" />
           </Row>
           <Row label="تأكيد كلمة المرور الجديدة">
-            <input type="password" className={inputClass} value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" />
+            <SecretInput value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" />
           </Row>
           <Button onClick={submit} disabled={!old || !pw}>
             <KeyRound className="h-4 w-4" /> تغيير
