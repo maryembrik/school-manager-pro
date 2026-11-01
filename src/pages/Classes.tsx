@@ -3,15 +3,17 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowRight, Printer, School, UserPlus, X } from 'lucide-react';
 import { CrudSection } from '../components/CrudPage';
+import { ExcelImportButtons } from '../components/ExcelImport';
 import { opts, type FieldDef } from '../components/EntityForm';
 import { Badge, Button, Card, EmptyState, Loading, PageHeader, Select, Tabs, inputClass } from '../components/ui';
 import { DataTable } from '../components/DataTable';
 import { useApp } from '../context/AppContext';
 import { useRefs } from '../hooks/data';
 import { db } from '../db/db';
-import { saveRecord } from '../db/repo';
+import { logActivity, saveRecord } from '../db/repo';
 import type { ScheduleSlot, SchoolClass } from '../db/types';
-import { escapeHtml, htmlTable, printHtml } from '../lib/exporters';
+import { escapeHtml, exportExcel, htmlTable, printHtml, readSpreadsheet } from '../lib/exporters';
+import { CLASS_HEADERS, parseClassRows, skippedSummary } from '../lib/importers';
 import { addDays, fullName, round, todayISO } from '../lib/utils';
 import { examStats, studentAverage } from '../lib/stats';
 
@@ -20,7 +22,7 @@ export const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8];
 export const PERIOD_TIMES = ['08:00', '09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00'];
 
 export function ClassesPage() {
-  const { settings } = useApp();
+  const { settings, run, toast } = useApp();
   const refs = useRefs();
   const navigate = useNavigate();
   const [level, setLevel] = useState('');
@@ -39,6 +41,22 @@ export function ClassesPage() {
   );
 
   const count = (c: SchoolClass) => (refs.students ?? []).filter((s) => s.classId === c.id).length;
+
+  const importFile = (file: File) =>
+    run(async () => {
+      const rows = await readSpreadsheet(file);
+      if (!rows.length) throw new Error('الملف فارغ.');
+      const { valid, skipped, unmatchedTeachers } = parseClassRows(rows, await db.classes.toArray(), await db.teachers.toArray(), settings.levels);
+      if (!valid.length) throw new Error(`لم يتم العثور على أي قسم جديد.${skippedSummary(skipped)}`);
+      const now = new Date().toISOString();
+      await db.classes.bulkAdd(valid.map((c) => ({ ...c, createdAt: now, updatedAt: now })));
+      await logActivity('استيراد', 'أقسام', `${valid.length} قسم من ${file.name}`);
+      // The classes were still created; these teachers can be assigned later from the class form.
+      const note = unmatchedTeachers.length ? `\nمعلمون غير مسجلين (لم يُربطوا): ${unmatchedTeachers.slice(0, 8).join('، ')}` : '';
+      toast(`تم استيراد ${valid.length} قسم.${skippedSummary(skipped)}${note}`, skipped.length || note ? 'warning' : 'success');
+    });
+
+  const downloadTemplate = () => exportExcel<null>([], CLASS_HEADERS.map((h) => ({ header: h, value: () => '' })), 'نموذج-استيراد-الأقسام.xlsx');
 
   return (
     <div>
@@ -59,14 +77,17 @@ export function ClassesPage() {
           return dup ? { name: 'يوجد قسم بنفس الاسم.' } : {};
         }}
         onView={(c) => navigate(`/classes/${c.id}`)}
+        toolbar={<ExcelImportButtons onFile={importFile} onTemplate={downloadTemplate} />}
+        // Same headers as the import template ("عدد التلاميذ" is ignored on import).
         exportColumns={[
           { header: 'القسم', value: (c) => c.name },
           { header: 'المستوى', value: (c) => c.level },
-          { header: 'المعلم الأول', value: (c) => refs.teacherName(c.teacherId) },
-          { header: 'المعلم الثاني', value: (c) => refs.teacherName(c.secondTeacherId) },
+          { header: 'المعلم الأول', value: (c) => (c.teacherId ? refs.teacherName(c.teacherId) : '') },
+          { header: 'المعلم الثاني', value: (c) => (c.secondTeacherId ? refs.teacherName(c.secondTeacherId) : '') },
           { header: 'القاعة', value: (c) => c.room },
-          { header: 'عدد التلاميذ', value: (c) => count(c) },
           { header: 'طاقة الاستيعاب', value: (c) => c.capacity },
+          { header: 'ملاحظات', value: (c) => c.notes },
+          { header: 'عدد التلاميذ', value: (c) => count(c) },
         ]}
         exportName="قائمة-الأقسام"
         columns={[

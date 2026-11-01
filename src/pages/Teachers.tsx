@@ -3,14 +3,17 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowRight, ClipboardPlus, Printer, Users } from 'lucide-react';
 import { CrudSection } from '../components/CrudPage';
+import { ExcelImportButtons } from '../components/ExcelImport';
 import { opts, type FieldDef } from '../components/EntityForm';
 import { Badge, Button, Card, EmptyState, Loading, PageHeader, Tabs } from '../components/ui';
 import { DataTable } from '../components/DataTable';
 import { useApp } from '../context/AppContext';
 import { useRefs } from '../hooks/data';
 import { db } from '../db/db';
+import { logActivity } from '../db/repo';
 import type { ClassVisit, Teacher } from '../db/types';
-import { escapeHtml, printHtml, type ExportColumn } from '../lib/exporters';
+import { escapeHtml, exportExcel, printHtml, readSpreadsheet, type ExportColumn } from '../lib/exporters';
+import { parseTeacherRows, skippedSummary, TEACHER_HEADERS } from '../lib/importers';
 import { formatDate, fullName, round } from '../lib/utils';
 import { effectiveTaskStatus } from '../lib/stats';
 import { taskStatusTone } from './Dashboard';
@@ -26,7 +29,7 @@ export function visitAxisAverages(visits: ClassVisit[], axes: { name: string; ma
 }
 
 export function TeachersPage() {
-  const { settings } = useApp();
+  const { settings, run, toast } = useApp();
   const refs = useRefs();
   const navigate = useNavigate();
 
@@ -51,16 +54,32 @@ export function TeachersPage() {
       .map((c) => c.name)
       .join('، ');
 
+  // Same headers as the import template, so an exported list can be imported elsewhere ("الأقسام" is ignored on import).
   const exportColumns: ExportColumn<Teacher>[] = [
     { header: 'الاسم', value: (t) => t.firstName },
     { header: 'اللقب', value: (t) => t.lastName },
     { header: 'الهاتف', value: (t) => t.phone },
-    { header: 'البريد', value: (t) => t.email },
+    { header: 'البريد الإلكتروني', value: (t) => t.email },
     { header: 'الاختصاص', value: (t) => t.specialty },
-    { header: 'الأقسام', value: (t) => classesOf(t) },
+    { header: 'المستوى', value: (t) => t.levels },
     { header: 'تاريخ الالتحاق', value: (t) => t.hireDate },
     { header: 'ملاحظات', value: (t) => t.notes },
+    { header: 'الأقسام', value: (t) => classesOf(t) },
   ];
+
+  const importFile = (file: File) =>
+    run(async () => {
+      const rows = await readSpreadsheet(file);
+      if (!rows.length) throw new Error('الملف فارغ.');
+      const { valid, skipped } = parseTeacherRows(rows, await db.teachers.toArray());
+      if (!valid.length) throw new Error(`لم يتم العثور على أي معلم جديد.${skippedSummary(skipped)}`);
+      const now = new Date().toISOString();
+      await db.teachers.bulkAdd(valid.map((t) => ({ ...t, createdAt: now, updatedAt: now })));
+      await logActivity('استيراد', 'معلمين', `${valid.length} معلم من ${file.name}`);
+      toast(`تم استيراد ${valid.length} معلم.${skippedSummary(skipped)}`, skipped.length ? 'warning' : 'success');
+    });
+
+  const downloadTemplate = () => exportExcel<null>([], TEACHER_HEADERS.map((h) => ({ header: h, value: () => '' })), 'نموذج-استيراد-المعلمين.xlsx');
 
   return (
     <div>
@@ -74,6 +93,7 @@ export function TeachersPage() {
         defaults={() => ({ firstName: '', lastName: '', phone: '', email: '', specialty: '', levels: '', hireDate: '', notes: '', needsFollowUp: false })}
         labelOf={(t) => fullName(t)}
         searchOf={(t) => [t.firstName, t.lastName, `${t.firstName} ${t.lastName}`, t.specialty, t.phone]}
+        toolbar={<ExcelImportButtons onFile={importFile} onTemplate={downloadTemplate} />}
         exportColumns={exportColumns}
         exportName="قائمة-المعلمين"
         onView={(t) => navigate(`/teachers/${t.id}`)}

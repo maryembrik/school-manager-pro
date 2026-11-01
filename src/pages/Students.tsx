@@ -1,8 +1,10 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowRight, Download, GraduationCap, Printer, Upload } from 'lucide-react';
+import { ArrowRight, GraduationCap, Printer } from 'lucide-react';
 import { CrudSection } from '../components/CrudPage';
+import { ExcelImportButtons } from '../components/ExcelImport';
+import { normalizeDate } from '../lib/importers';
 import { opts, type FieldDef, type Values } from '../components/EntityForm';
 import { Badge, Button, Card, EmptyState, Loading, PageHeader, Select, Tabs } from '../components/ui';
 import { DataTable } from '../components/DataTable';
@@ -52,25 +54,12 @@ const IMPORT_HEADERS: [keyof Student | 'className', string][] = [
   ['notes', 'ملاحظات'],
 ];
 
-function normalizeDate(v: unknown): string {
-  const s = String(v ?? '').trim();
-  if (!s) return '';
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  const m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/.exec(s);
-  if (m) {
-    const y = m[3].length === 2 ? `20${m[3]}` : m[3];
-    return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
-  }
-  return '';
-}
-
 export function StudentsPage() {
   const { settings, run, toast } = useApp();
   const refs = useRefs();
   const navigate = useNavigate();
   const [level, setLevel] = useState('');
   const [classId, setClassId] = useState('');
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const fields: FieldDef[] = useMemo(
     () => [
@@ -191,27 +180,7 @@ export function StudentsPage() {
             />
           </>
         }
-        toolbar={
-          <>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) importFile(f);
-                e.target.value = '';
-              }}
-            />
-            <Button variant="ghost" onClick={downloadTemplate} title="تحميل نموذج Excel للاستيراد">
-              <Download className="h-4 w-4" /> نموذج
-            </Button>
-            <Button variant="secondary" onClick={() => fileRef.current?.click()}>
-              <Upload className="h-4 w-4" /> استيراد Excel
-            </Button>
-          </>
-        }
+        toolbar={<ExcelImportButtons onFile={importFile} onTemplate={downloadTemplate} />}
         exportColumns={exportColumns}
         exportName="قائمة-التلاميذ"
         onView={(s) => navigate(`/students/${s.id}`)}
