@@ -30,11 +30,12 @@ describe('Class import', () => {
   const teachers = [teacher('أحمد', 'بن علي', 7), teacher('سارة', 'العياري', 8)];
 
   it('links teachers by name (tolerating hamza) and validates level and duplicates', () => {
-    const existing = [{ name: '2 أ', level: 'السنة الثانية', room: '', capacity: 30, schedule: [], notes: '' } as SchoolClass];
+    const existing = [{ name: '2 أ', level: 'السنة الثانية', teacherIds: [], room: '', capacity: 30, schedule: [], notes: '' } as SchoolClass];
     const { valid, skipped, unmatchedTeachers } = parseClassRows(
       [
+        // Old template column names are still understood.
         { القسم: '1 أ', المستوى: 'السنة الأولى', 'المعلم الأول': 'احمد بن علي', 'المعلم الثاني': 'سارة العياري', 'طاقة الاستيعاب': '28' },
-        { القسم: '1 ب', المستوى: 'السنة الأولى', 'المعلم الأول': 'معلم مجهول' },
+        { القسم: '1 ب', المستوى: 'السنة الأولى', 'المعلم 1': 'معلم مجهول' },
         { القسم: '9 أ', المستوى: 'السنة التاسعة' },
         { القسم: '2 أ', المستوى: 'السنة الثانية' },
         { القسم: '', المستوى: 'السنة الأولى' },
@@ -44,10 +45,21 @@ describe('Class import', () => {
       LEVELS,
     );
     expect(valid).toHaveLength(2);
-    expect(valid[0]).toMatchObject({ name: '1 أ', teacherId: 7, secondTeacherId: 8, capacity: 28 });
-    expect(valid[1]).toMatchObject({ name: '1 ب', teacherId: undefined, capacity: 30 });
+    expect(valid[0]).toMatchObject({ name: '1 أ', teacherIds: [7, 8], capacity: 28 });
+    expect(valid[1]).toMatchObject({ name: '1 ب', teacherIds: [], capacity: 30 });
     expect(unmatchedTeachers).toEqual(['معلم مجهول']);
     expect(skipped.map((s) => s.line)).toEqual([4, 5, 6]);
+  });
+
+  it('reads up to five teachers per class, in order, without repeats', () => {
+    const five = [1, 2, 3, 4, 5].map((i) => teacher(`معلم${i}`, 'تجربة', i));
+    const { valid } = parseClassRows(
+      [{ القسم: '5 أ', المستوى: 'السنة الأولى', 'المعلم 1': 'معلم3 تجربة', 'المعلم 2': 'معلم1 تجربة', 'المعلم 3': 'معلم3 تجربة', 'المعلم 4': 'معلم5 تجربة', 'المعلم 5': 'معلم2 تجربة' }],
+      [],
+      five,
+      LEVELS,
+    );
+    expect(valid[0].teacherIds).toEqual([3, 1, 5, 2]);
   });
 });
 

@@ -1,6 +1,6 @@
 // Turning spreadsheet rows (keyed by Arabic column headers) into records.
 // Kept free of React and of the database so the rules can be tested directly.
-import type { SchoolClass, Teacher } from '../db/types';
+import { MAX_CLASS_TEACHERS, type SchoolClass, type Teacher } from '../db/types';
 import { normalize } from './utils';
 
 export type Row = Record<string, unknown>;
@@ -12,7 +12,10 @@ export interface ParseResult<T> {
 }
 
 export const TEACHER_HEADERS = ['الاسم', 'اللقب', 'الهاتف', 'البريد الإلكتروني', 'الاختصاص', 'المستوى', 'تاريخ الالتحاق', 'ملاحظات'];
-export const CLASS_HEADERS = ['القسم', 'المستوى', 'المعلم الأول', 'المعلم الثاني', 'القاعة', 'طاقة الاستيعاب', 'ملاحظات'];
+export const CLASS_TEACHER_HEADERS = Array.from({ length: MAX_CLASS_TEACHERS }, (_, i) => `المعلم ${i + 1}`);
+export const CLASS_HEADERS = ['القسم', 'المستوى', ...CLASS_TEACHER_HEADERS, 'القاعة', 'طاقة الاستيعاب', 'ملاحظات'];
+// Column names used by earlier templates, still accepted for teachers 1 and 2.
+const LEGACY_TEACHER_HEADERS = ['المعلم الأول', 'المعلم الثاني'];
 
 const cell = (r: Row, h: string) => String(r[h] ?? '').trim();
 const nameKey = (s: string) => normalize(s).replace(/\s+/g, ' ').trim();
@@ -56,7 +59,10 @@ export function parseTeacherRows(rows: Row[], existing: Teacher[]): ParseResult<
   return result;
 }
 
-/** Teachers are matched by "first last" name, ignoring hamza/spacing differences. */
+/**
+ * Teachers ("المعلم 1" … "المعلم 5") are matched by "first last" name, ignoring hamza/spacing
+ * differences; a teacher listed twice on one row is kept once.
+ */
 export function parseClassRows(
   rows: Row[],
   existing: SchoolClass[],
@@ -75,19 +81,19 @@ export function parseClassRows(
     if (!levels.includes(level)) return result.skipped.push({ line, reason: `المستوى "${level || '—'}" غير موجود في الإعدادات` });
     if (seen.has(name)) return result.skipped.push({ line, reason: 'القسم موجود مسبقًا' });
     seen.add(name);
-    const teacher = (h: string) => {
-      const n = cell(r, h);
-      if (!n) return undefined;
+    const teacherIds: number[] = [];
+    CLASS_TEACHER_HEADERS.forEach((h, i) => {
+      const n = cell(r, h) || (LEGACY_TEACHER_HEADERS[i] ? cell(r, LEGACY_TEACHER_HEADERS[i]) : '');
+      if (!n) return;
       const id = teacherByName.get(nameKey(n));
       if (id === undefined) unmatched.add(n);
-      return id;
-    };
+      else if (!teacherIds.includes(id)) teacherIds.push(id);
+    });
     const capacity = Number(cell(r, 'طاقة الاستيعاب'));
     result.valid.push({
       name,
       level,
-      teacherId: teacher('المعلم الأول'),
-      secondTeacherId: teacher('المعلم الثاني'),
+      teacherIds,
       room: cell(r, 'القاعة'),
       capacity: Number.isFinite(capacity) && capacity > 0 ? Math.round(capacity) : 30,
       schedule: [],

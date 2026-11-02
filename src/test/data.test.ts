@@ -1,8 +1,9 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it } from 'vitest';
+import Dexie from 'dexie';
 import { db, SchoolDB } from '../db/db';
 import { deleteRecord, saveRecord, saveWithAttachment, setGrade, setStudentAttendance } from '../db/repo';
-import type { DocumentRecord, Exam, SchoolClass, Student, Task } from '../db/types';
+import type { DocumentRecord, Exam, SchoolClass, Student, Task, Teacher } from '../db/types';
 import { createBackup, restoreBackup, validateBackup, wipeAllData } from '../lib/backup';
 import { createRecoveryCode, hasRecoveryCode, resetPasswordWithRecoveryCode, setPassword, verifyPassword } from '../lib/auth';
 import { examStats, effectiveTaskStatus, repeatedAbsences, studentAverage } from '../lib/stats';
@@ -89,12 +90,49 @@ describe('CRUD: add, edit, delete', () => {
   });
 
   it('deleting a class unlinks its students instead of deleting them', async () => {
-    const classId = await saveRecord<SchoolClass>('classes', { name: '4 أ', level: 'السنة الرابعة', room: '', capacity: 30, schedule: [], notes: '' }, '4 أ');
+    const classId = await saveRecord<SchoolClass>('classes', { name: '4 أ', level: 'السنة الرابعة', teacherIds: [], room: '', capacity: 30, schedule: [], notes: '' }, '4 أ');
     const sid = await saveRecord('students', student({ classId }), 'x');
     await deleteRecord('classes', classId, '4 أ');
     const s = await db.students.get(sid);
     expect(s).toBeDefined();
     expect(s?.classId).toBeUndefined();
+  });
+
+  it('deleting a teacher removes them from every class list and keeps the others', async () => {
+    const ids = await Promise.all(['أ', 'ب', 'ج'].map((n) => saveRecord<Teacher>('teachers', { firstName: n, lastName: 'م', phone: '', email: '', specialty: '', levels: '', hireDate: '', notes: '', needsFollowUp: false }, n)));
+    const c1 = await saveRecord<SchoolClass>('classes', { name: '1 أ', level: 'السنة الأولى', teacherIds: [ids[0], ids[1], ids[2]], room: '', capacity: 30, schedule: [], notes: '' }, '1 أ');
+    const c2 = await saveRecord<SchoolClass>('classes', { name: '1 ب', level: 'السنة الأولى', teacherIds: [ids[1]], room: '', capacity: 30, schedule: [], notes: '' }, '1 ب');
+    await deleteRecord('teachers', ids[1], 'ب');
+    expect((await db.classes.get(c1))?.teacherIds).toEqual([ids[0], ids[2]]);
+    expect((await db.classes.get(c2))?.teacherIds).toEqual([]);
+  });
+});
+
+describe('Classes with several teachers: upgrading existing data', () => {
+  it('converts a version-1 database (first/second teacher) to the teacher list on open', async () => {
+    const name = 'smp-migration-test';
+    const old = new Dexie(name);
+    old.version(1).stores({ classes: '++id, name, level, teacherId' });
+    await old.table('classes').bulkAdd([
+      { name: '3 أ', level: 'السنة الثالثة', teacherId: 4, secondTeacherId: 9, room: '', capacity: 30, schedule: [], notes: '' },
+      { name: '3 ب', level: 'السنة الثالثة', room: '', capacity: 30, schedule: [], notes: '' },
+    ]);
+    old.close();
+
+    const upgraded = new SchoolDB(name);
+    const classes = await upgraded.classes.orderBy('name').toArray();
+    expect(classes.map((c) => c.teacherIds)).toEqual([[4, 9], []]);
+    expect(classes[0]).not.toHaveProperty('teacherId');
+    expect(await upgraded.classes.where('teacherIds').equals(9).count()).toBe(1);
+    upgraded.close();
+    await Dexie.delete(name);
+  });
+
+  it('restores a backup made before the change', async () => {
+    const backup = await createBackup(false);
+    backup.tables.classes = [{ id: 1, name: '6 أ', level: 'السنة السادسة', teacherId: 2, secondTeacherId: 3, room: '', capacity: 30, schedule: [], notes: '' }];
+    await restoreBackup(backup);
+    expect((await db.classes.get(1))?.teacherIds).toEqual([2, 3]);
   });
 });
 

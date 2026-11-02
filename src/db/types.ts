@@ -45,11 +45,13 @@ export interface ScheduleSlot {
   teacherId?: number;
 }
 
+export const MAX_CLASS_TEACHERS = 5;
+
 export interface SchoolClass extends BaseRecord {
   name: string;
   level: string;
-  teacherId?: number;
-  secondTeacherId?: number;
+  /** Up to MAX_CLASS_TEACHERS teachers, in order; the first is the main teacher. */
+  teacherIds: number[];
   room: string;
   capacity: number;
   schedule: ScheduleSlot[];

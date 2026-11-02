@@ -18,6 +18,7 @@ import type {
   Teacher,
   TeacherAttendance,
 } from './types';
+import { MAX_CLASS_TEACHERS } from './types';
 
 export class SchoolDB extends Dexie {
   students!: Table<Student, number>;
@@ -59,7 +60,33 @@ export class SchoolDB extends Dexie {
       activity: '++id, at',
       meta: 'key',
     });
+    // v2: a class has a list of up to 5 teachers instead of a first and a second teacher.
+    this.version(2)
+      .stores({ classes: '++id, name, level, *teacherIds' })
+      .upgrade((tx) =>
+        tx
+          .table('classes')
+          .toCollection()
+          .modify((c: Record<string, unknown>) => {
+            Object.assign(c, normalizeClass(c));
+            delete c.teacherId;
+            delete c.secondTeacherId;
+          }),
+      );
   }
+}
+
+/**
+ * Bring a class record from any version (database v1 or an older backup, with `teacherId` /
+ * `secondTeacherId`) to the current shape with `teacherIds`.
+ */
+export function normalizeClass<T extends Record<string, unknown>>(c: T): T & { teacherIds: number[] } {
+  const legacy = [c.teacherId, c.secondTeacherId].filter((x): x is number => typeof x === 'number');
+  const ids = Array.isArray(c.teacherIds) ? (c.teacherIds as unknown[]).filter((x): x is number => typeof x === 'number') : legacy;
+  const { teacherId: _a, secondTeacherId: _b, ...rest } = c;
+  void _a;
+  void _b;
+  return { ...(rest as T), teacherIds: [...new Set(ids)].slice(0, MAX_CLASS_TEACHERS) };
 }
 
 export const db = new SchoolDB();

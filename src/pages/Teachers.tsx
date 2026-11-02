@@ -50,7 +50,7 @@ export function TeachersPage() {
 
   const classesOf = (t: Teacher) =>
     (refs.classes ?? [])
-      .filter((c) => c.teacherId === t.id || c.secondTeacherId === t.id)
+      .filter((c) => c.teacherIds.includes(t.id!))
       .map((c) => c.name)
       .join('، ');
 
@@ -132,7 +132,7 @@ export function TeacherProfile() {
   if (!data) return <Loading />;
   if (!data.teacher) return <EmptyState message="المعلم غير موجود." action={<Button onClick={() => navigate('/teachers')}>العودة</Button>} />;
   const t = data.teacher;
-  const classes = (refs.classes ?? []).filter((c) => c.teacherId === tid || c.secondTeacherId === tid);
+  const classes = (refs.classes ?? []).filter((c) => c.teacherIds.includes(tid));
   const averages = visitAxisAverages(data.visits!, settings.evaluationAxes);
   const absences = data.attendance!.filter((a) => a.type === 'absent').length;
   const leaves = data.attendance!.filter((a) => a.type === 'leave').length;

@@ -11,7 +11,7 @@ import { useApp } from '../context/AppContext';
 import { useRefs } from '../hooks/data';
 import { db } from '../db/db';
 import { logActivity, saveRecord } from '../db/repo';
-import type { ScheduleSlot, SchoolClass } from '../db/types';
+import { MAX_CLASS_TEACHERS, type ScheduleSlot, type SchoolClass } from '../db/types';
 import { escapeHtml, exportExcel, htmlTable, printHtml, readSpreadsheet } from '../lib/exporters';
 import { CLASS_HEADERS, parseClassRows, skippedSummary } from '../lib/importers';
 import { addDays, fullName, round, todayISO } from '../lib/utils';
@@ -20,6 +20,13 @@ import { examStats, studentAverage } from '../lib/stats';
 export const SCHOOL_DAYS = ['الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 export const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8];
 export const PERIOD_TIMES = ['08:00', '09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00'];
+
+/** Form-only fields for the class teachers; saved together as `teacherIds`. */
+const TEACHER_SLOTS = Array.from({ length: MAX_CLASS_TEACHERS }, (_, i) => `teacher${i + 1}`);
+
+export function classTeachers(c: SchoolClass, teacherName: (id?: number) => string) {
+  return c.teacherIds.map(teacherName).join('، ');
+}
 
 export function ClassesPage() {
   const { settings, run, toast } = useApp();
@@ -31,10 +38,9 @@ export function ClassesPage() {
     () => [
       { name: 'name', label: 'اسم القسم', type: 'text', required: true, placeholder: 'مثال: 3 أ' },
       { name: 'level', label: 'المستوى الدراسي', type: 'select', required: true, options: opts(settings.levels) },
-      { name: 'teacherId', label: 'المعلم الأول', type: 'select', numeric: true, options: refs.teacherOptions },
-      { name: 'secondTeacherId', label: 'المعلم الثاني', type: 'select', numeric: true, options: refs.teacherOptions },
       { name: 'room', label: 'القاعة', type: 'text' },
       { name: 'capacity', label: 'طاقة الاستيعاب', type: 'number', min: 0, max: 80 },
+      ...TEACHER_SLOTS.map((name, i): FieldDef => ({ name, label: i === 0 ? 'المعلم 1 (الرئيسي)' : `المعلم ${i + 1}`, type: 'select', numeric: true, options: refs.teacherOptions })),
       { name: 'notes', label: 'ملاحظات', type: 'textarea' },
     ],
     [settings.levels, refs.teacherOptions],
@@ -67,14 +73,26 @@ export function ClassesPage() {
         title="قائمة الأقسام"
         rows={refs.classes}
         fields={fields}
-        defaults={() => ({ name: '', level: level || '', teacherId: undefined, secondTeacherId: undefined, room: '', capacity: 30, schedule: [], notes: '' })}
+        defaults={() => ({ name: '', level: level || '', room: '', capacity: 30, schedule: [], notes: '', teacherIds: [] })}
+        toForm={(c) => ({ ...c, ...Object.fromEntries(TEACHER_SLOTS.map((s, i) => [s, c.teacherIds[i]])) })}
+        beforeSave={(v) => {
+          // The five boxes become one ordered list; empty boxes are dropped.
+          const teacherIds = TEACHER_SLOTS.map((s) => v[s]).filter((x): x is number => typeof x === 'number');
+          const rest = Object.fromEntries(Object.entries(v).filter(([k]) => !TEACHER_SLOTS.includes(k)));
+          return { ...rest, teacherIds };
+        }}
         labelOf={(c) => c.name}
-        searchOf={(c) => [c.name, c.level, c.room, refs.teacherName(c.teacherId)]}
+        searchOf={(c) => [c.name, c.level, c.room, ...c.teacherIds.map(refs.teacherName)]}
         filterFn={(c) => !level || c.level === level}
         filters={<Select value={level} onChange={setLevel} placeholder="كل المستويات" options={settings.levels.map((l) => ({ value: l, label: l }))} />}
         extraValidate={(v) => {
+          const errors: Record<string, string | undefined> = {};
           const dup = (refs.classes ?? []).find((c) => c.name.trim() === String(v.name).trim() && c.id !== v.id);
-          return dup ? { name: 'يوجد قسم بنفس الاسم.' } : {};
+          if (dup) errors.name = 'يوجد قسم بنفس الاسم.';
+          TEACHER_SLOTS.forEach((s, i) => {
+            if (v[s] !== undefined && TEACHER_SLOTS.slice(0, i).some((p) => v[p] === v[s])) errors[s] = 'هذا المعلم مختار مسبقًا لهذا القسم.';
+          });
+          return errors;
         }}
         onView={(c) => navigate(`/classes/${c.id}`)}
         toolbar={<ExcelImportButtons onFile={importFile} onTemplate={downloadTemplate} />}
@@ -82,10 +100,9 @@ export function ClassesPage() {
         exportColumns={[
           { header: 'القسم', value: (c) => c.name },
           { header: 'المستوى', value: (c) => c.level },
-          { header: 'المعلم الأول', value: (c) => (c.teacherId ? refs.teacherName(c.teacherId) : '') },
-          { header: 'المعلم الثاني', value: (c) => (c.secondTeacherId ? refs.teacherName(c.secondTeacherId) : '') },
           { header: 'القاعة', value: (c) => c.room },
           { header: 'طاقة الاستيعاب', value: (c) => c.capacity },
+          ...TEACHER_SLOTS.map((_, i) => ({ header: `المعلم ${i + 1}`, value: (c: SchoolClass) => (c.teacherIds[i] ? refs.teacherName(c.teacherIds[i]) : '') })),
           { header: 'ملاحظات', value: (c) => c.notes },
           { header: 'عدد التلاميذ', value: (c) => count(c) },
         ]}
@@ -93,7 +110,7 @@ export function ClassesPage() {
         columns={[
           { header: 'القسم', render: (c) => <span className="font-semibold">{c.name}</span>, sortValue: (c) => c.name },
           { header: 'المستوى', render: (c) => c.level, sortValue: (c) => c.level },
-          { header: 'المعلمون', render: (c) => [refs.teacherName(c.teacherId), c.secondTeacherId ? refs.teacherName(c.secondTeacherId) : ''].filter(Boolean).join('، ') },
+          { header: 'المعلمون', render: (c) => classTeachers(c, refs.teacherName) || '—' },
           {
             header: 'عدد التلاميذ',
             sortValue: (c) => count(c),
@@ -157,7 +174,7 @@ export function ClassDetail() {
     run(async () =>
       printHtml(
         `قائمة تلاميذ القسم ${cls.name} (${cls.level})`,
-        `<p>المعلم: ${escapeHtml(refs.teacherName(cls.teacherId))} — العدد: ${students.length}</p>` +
+        `<p>المعلمون: ${escapeHtml(classTeachers(cls, refs.teacherName) || '—')} — العدد: ${students.length}</p>` +
           htmlTable(
             students.map((s, i) => ({ ...s, n: i + 1 })),
             [
@@ -198,7 +215,7 @@ export function ClassDetail() {
     <div>
       <PageHeader
         title={`القسم ${cls.name}`}
-        subtitle={`${cls.level} — ${refs.teacherName(cls.teacherId)}`}
+        subtitle={`${cls.level} — ${classTeachers(cls, refs.teacherName) || 'بدون معلم'}`}
         icon={<School />}
         actions={
           <>

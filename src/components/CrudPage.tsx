@@ -32,6 +32,7 @@ export function CrudSection<T extends BaseRecord>({
   extraActions,
   toolbar,
   beforeSave,
+  toForm,
   extraValidate,
   formExtra,
   title,
@@ -58,6 +59,8 @@ export function CrudSection<T extends BaseRecord>({
   extraActions?: (r: T) => ReactNode;
   toolbar?: ReactNode;
   beforeSave?: (v: Values) => Values;
+  /** Turn a stored record into form values when editing (the reverse of `beforeSave`). */
+  toForm?: (r: T) => Values;
   extraValidate?: (v: Values) => Record<string, string | undefined>;
   formExtra?: (values: Values, set: (name: string, v: unknown) => void) => ReactNode;
   title?: string;
@@ -139,7 +142,7 @@ export function CrudSection<T extends BaseRecord>({
               </IconButton>
             )}
             {extraActions?.(r)}
-            <IconButton title="تعديل" onClick={() => setEditing({ ...(r as Values) })}>
+            <IconButton title="تعديل" onClick={() => setEditing(toForm ? toForm(r) : { ...(r as Values) })}>
               <Pencil className="h-4 w-4" />
             </IconButton>
             <IconButton title="حذف" tone="danger" onClick={() => remove(r)}>

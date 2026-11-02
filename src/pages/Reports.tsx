@@ -10,6 +10,7 @@ import { escapeHtml, exportExcelSheets, printHtml } from '../lib/exporters';
 import { endOfMonth, formatDate, fullName, inRange, round, startOfMonth, todayISO } from '../lib/utils';
 import { effectiveTaskStatus, examStats, repeatedAbsences, studentAverage, taskCompletionRate } from '../lib/stats';
 import { TEACHER_ATT_LABEL } from './Attendance';
+import { classTeachers } from './Classes';
 import { visitAxisAverages } from './Teachers';
 
 type ReportType =
@@ -198,7 +199,7 @@ export function ReportsPage() {
         const avgs = cs.map((s) => studentAverage(s.id!, ce, data.grades, S)).filter((x): x is number => x !== null);
         const avg = avgs.length ? round(avgs.reduce((a, b) => a + b, 0) / avgs.length) : 0;
         const absentC = ca.filter((a) => a.status === 'absent').length;
-        return { name: c.name, level: c.level, teacher: refs.teacherName(c.teacherId), count: cs.length, presence: ca.length ? round(((ca.length - absentC) / ca.length) * 100, 1) : 0, average: avg, pass: avgs.length ? round((avgs.filter((a) => a >= P).length / avgs.length) * 100, 0) : 0 };
+        return { name: c.name, level: c.level, teacher: classTeachers(c, refs.teacherName) || '—', count: cs.length, presence: ca.length ? round(((ca.length - absentC) / ca.length) * 100, 1) : 0, average: avg, pass: avgs.length ? round((avgs.filter((a) => a >= P).length / avgs.length) * 100, 0) : 0 };
       });
       return {
         kpis: [
@@ -206,7 +207,7 @@ export function ReportsPage() {
           ['معدل عدد التلاميذ بالقسم', classes.length ? round(rows.reduce((a, r) => a + r.count, 0) / classes.length, 1) : '—'],
         ],
         chart: { data: rows, xKey: 'name', bars: [{ key: 'average', name: `المعدل / ${S}`, color: '#1e3a8a' }, { key: 'presence', name: 'نسبة الحضور %', color: '#16a34a' }] },
-        tables: [{ title: 'مؤشرات الأقسام', headers: ['القسم', 'المستوى', 'المعلم', 'التلاميذ', 'نسبة الحضور %', 'المعدل', 'نسبة النجاح %'], rows: rows.map((r) => [r.name, r.level, r.teacher, r.count, r.presence, r.average, r.pass]) }],
+        tables: [{ title: 'مؤشرات الأقسام', headers: ['القسم', 'المستوى', 'المعلمون', 'التلاميذ', 'نسبة الحضور %', 'المعدل', 'نسبة النجاح %'], rows: rows.map((r) => [r.name, r.level, r.teacher, r.count, r.presence, r.average, r.pass]) }],
       };
     };
 

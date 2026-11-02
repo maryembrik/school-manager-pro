@@ -85,7 +85,12 @@ export async function deleteRecord(name: DataTableName, id: number, label: strin
       }
       if (name === 'teachers') {
         await db.teacherAttendance.where('teacherId').equals(id).delete();
-        await db.classes.where('teacherId').equals(id).modify({ teacherId: undefined });
+        await db.classes
+          .where('teacherIds')
+          .equals(id)
+          .modify((c) => {
+            c.teacherIds = c.teacherIds.filter((t) => t !== id);
+          });
       }
       if (name === 'classes') {
         await db.students.where('classId').equals(id).modify({ classId: undefined });

@@ -1,4 +1,4 @@
-import { db, DATA_TABLES, type DataTableName } from '../db/db';
+import { db, DATA_TABLES, normalizeClass, type DataTableName } from '../db/db';
 import { logActivity } from '../db/repo';
 import { loadSettings, sanitizeSettings, saveSettings, type AppSettings } from './settings';
 
@@ -124,7 +124,8 @@ export async function restoreBackup(data: BackupPayload) {
     for (const name of DATA_TABLES) {
       await db.table(name).clear();
       const rows = data.tables[name];
-      if (rows?.length) await db.table(name).bulkAdd(rows);
+      // Backups made before classes had a teacher list are converted on the way in.
+      if (rows?.length) await db.table(name).bulkAdd(name === 'classes' ? rows.map((r) => normalizeClass(r as Record<string, unknown>)) : rows);
     }
     if (data.files) {
       await db.files.clear();
